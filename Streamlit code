@@ -1,0 +1,66 @@
+import streamlit as st
+from link_collection import googlesearch
+from Data_collections import scrape_dynamic_website
+from embeddings import embeddings, search
+from langchain.llms import OpenAI
+from langchain.chains.question_answering import load_qa_chain
+from langchain.docstore.document import Document
+import numpy as np
+
+st.set_page_config(page_title="AI-Powered Web Search", layout="wide")
+
+st.title("AI-Powered Interactive Web Search")
+st.write("Ask questions and get answers from live web content using RAG.")
+
+st.sidebar.header("Search Settings")
+
+query = st.text_input("Enter your query")
+top_n = st.sidebar.number_input(
+    "Number of websites (Top N)",
+    min_value=1,
+    max_value=10,
+    value=3
+)
+
+if st.button("Search & Generate Answer"):
+    if query.strip() == "":
+        st.warning("Please enter a query")
+    else:
+        st.info("Searching websites...")
+        links = googlesearch(query, num_results=top_n)
+
+        all_text = ""
+        for link in links:
+            try:
+                text = scrape_dynamic_website(link)
+                if text:
+                    all_text += text
+            except:
+                continue
+
+        st.info("Creating embeddings & vector index...")
+        index, model = embeddings(all_text)
+        chunks = [all_text[i:i+100] for i in range(0, len(all_text), 100)]
+
+        st.info("Generating answer using RAG...")
+        embedded_query = model.encode([query]).astype(np.float32)
+        _, indices = index.search(embedded_query, 5)
+
+        retrieved_chun 
+        
+        
+        
+         ks = [chunks[i] for i in indices[0]]
+        docs = [Document(page_content=chunk) for chunk in retrieved_chunks]
+
+        llm = OpenAI(temperature=0)
+        chain = load_qa_chain(llm, chain_type="stuff")
+        answer = chain.run(input_documents=docs, question=query)
+
+        st.subheader("Answer")
+        st.write(answer)
+
+        st.subheader("Sources")
+        for link in links:
+            st.write(link)
+...
