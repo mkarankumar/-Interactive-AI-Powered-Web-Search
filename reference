@@ -1,0 +1,78 @@
+import streamlit as st
+from link_collection import googlesearch
+from Data_collections import scrape_dynamic_website
+from embeddings import embeddings
+from langchain.llms import OpenAI
+from langchain.chains.question_answering import load_qa_chain
+from langchain.docstore.document import Document
+import numpy as np
+
+st.set_page_config(page_title="AI-Powered RAG Chatbot", layout="wide")
+st.title("AI-Powered RAG Chatbot")
+
+# -------- SESSION STATE INIT --------
+if "index" not in st.session_state:
+    st.session_state.index = None
+    st.session_state.model = None
+    st.session_state.chunks = None
+    st.session_state.chat_history = []
+
+# -------- USER INPUT --------
+query = st.text_input("Ask something...")
+
+# -------- CHAT LOG --------
+for role, msg in st.session_state.chat_history:
+    if role == "user":
+        st.markdown(f"** You:** {msg}")
+    else:
+        st.markdown(f"** AI:** {msg}")
+
+# -------- PROCESS QUERY --------
+if st.button("Send"):
+    if query.strip() == "":
+        st.warning("Please enter a question")
+    else:
+        st.session_state.chat_history.append(("user", query))
+
+        # ---------- FIRST QUERY → SEARCH + EMBEDDING ----------
+        if st.session_state.index is None:
+            st.info(" Searching web and building knowledge base...")
+
+            links = googlesearch(query, num_results=3)
+            all_text = ""
+
+            for link in links:
+                try:
+                    text = scrape_dynamic_website(link)
+                    if text:
+                        all_text += text
+                except:
+                    continue
+
+            index, model = embeddings(all_text)
+            chunks = [all_text[i:i+500] for i in range(0, len(all_text), 500)]
+
+            st.session_state.index = index
+            st.session_state.model = model
+            st.session_state.chunks = chunks
+
+        # ---------- RAG ANSWER ----------
+        embedded_query = st.session_state.model.encode([query]).astype(np.float32)
+        _, indices = st.session_state.index.search(embedded_query, 5)
+
+        retrieved_chunks = [
+            st.session_state.chunks[i] for i in indices[0]
+        ]
+
+        docs = [Document(page_content=chunk) for chunk in retrieved_chunks]
+
+        llm = OpenAI(temperature=0)
+        chain = load_qa_chain(llm, chain_type="stuff")
+
+        answer = chain.run(
+            input_documents=docs,
+            question=query
+        )
+
+        st.session_state.chat_history.append(("ai", answer))
+        st.rerun()
